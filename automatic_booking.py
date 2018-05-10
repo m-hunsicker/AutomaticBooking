@@ -127,7 +127,7 @@ def reservation_cours(activity_list):
 
             else:
                 synthese = f"Cours non réservé cf. erreur {result[1]}"
-                send_email(SUPPORT_EMAIL, synthese, "Well done")
+                #send_email(SUPPORT_EMAIL, synthese, "Well done")
 
 try:
     log_print("Démarrage du processus de réservation")

@@ -58,7 +58,7 @@ def get_next_weekday(weekday):
 
 def log_print(text):
     """
-    Impression préfixée par l'horodatage.
+    Impression à l'écran avec l'horodatage préfixée.
     """
     print((datetime.now()).strftime("%Y-%m-%dT%H:%M:%S"), ": ", text)
 
@@ -95,8 +95,9 @@ def course_booking(id_session, id_cours):
 
 def reservation_cours(activity_list):
     """
-    #Récupération des cours du samedi et du dimanche matin)
-    #cf. Aurélie, le délai est de 48h
+    Récupération des cours listés et selon la liste des jours.
+    A priori l'ouverture de la réservation survient 48 heures avant le cours
+    A faire: Revoir le process des jours cf. utilisation de crontab.
     """
     id_session = authenticate()
     #Détermination du prochain samedi et dimanche

@@ -39,12 +39,12 @@ def send_email(receiver, subject, text):
     sandbox = private_data.sandbox
 
     request_url = 'https://api.mailgun.net/v3/{0}/messages'.format(sandbox)
-  
+
     request = requests.post(request_url, auth=('api', key), data={
-    'from': 'Gymclass_bot@mailgun.net',
-    'to': receiver,
-    'subject': subject,
-    'text': text})
+        'from': 'Gymclass_bot@mailgun.net',
+        'to': receiver,
+        'subject': subject,
+        'text': text})
     log_print('Email status: {0}'.format(request.status_code))
 
 
@@ -60,7 +60,7 @@ def log_print(text):
     """
     Impression préfixée par l'horodatage.
     """
-    print((datetime.now()).strftime("%Y-%M-%dT%H:%m:%S"),": ", text)
+    print((datetime.now()).strftime("%Y-%m-%dT%H:%M:%S"), ": ", text)
 
 def authenticate():
     """
@@ -84,7 +84,7 @@ def course_booking(id_session, id_cours):
     payload = {"idErreur":0,
                "idRequete":id_cours,
                "idSession": id_session,
-               "place":1,
+               "place":1, #Nombre de places à réserver
                "status":0,
                "type":301}
     req = requests.post(URL_JSON, HEADERS, params=payload)
@@ -135,6 +135,7 @@ try:
 
 except Exception as exception:
     log_print("Erreur dans la  " + str(exception))
-    send_email(SUPPORT_EMAIL, "Le processus de réservation cours a planté", "L'erreur est :" + str(exception))
+    send_email(SUPPORT_EMAIL, "Le processus de réservation cours a planté",
+               "L'erreur est :" + str(exception))
 
 log_print("Le processus de réservation s'est bien déroulé")

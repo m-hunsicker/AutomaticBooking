@@ -95,12 +95,13 @@ def course_booking(id_session, id_cours):
 
 def reservation_cours(activity_list):
     """
-    Récupération des cours listés et selon la liste des jours.
+    Récupération des cours listés et selon la liste des jours. Le cours est
+    supposé du matin.
     A priori l'ouverture de la réservation survient 48 heures avant le cours
     A faire: Revoir le process des jours cf. utilisation de crontab.
     """
     id_session = authenticate()
-    #Détermination du prochain samedi et dimanche
+    #Détermination des prochains jours au format de l'interface JSON.
     jours_liste = [get_next_weekday(i).strftime('%d-%m-%Y') for i in DAY_LIST]
     #Récupération de la liste des cours
     for key in activity_list.keys():

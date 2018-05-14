@@ -174,10 +174,6 @@ def reservation_cours(course_list):
                (int(time_components[1]) == booking_datetime.time().minute): 
                    id_course_to_book = dict(request_answer["reservation"][0])['id']
     
-        #Boucle pour attendre la seconde précédent la minute suivante
-        #A revoir peut être avec le système de thread pour déclencher tout.                
-        while datetime.now().second   < 59:
-            system_time.sleep(0.5)
         #lancement des threads cf. parallélisation des requêtes
         threads = []
         for id_thread in range(THREAD_NUMBER):
@@ -189,6 +185,10 @@ def reservation_cours(course_list):
                                        booking_datetime,                              
                                        THREAD_ITER))
             threads.append(t)
+        #Boucle pour attendre la seconde précédent la minute suivante
+        #A revoir peut être avec le système de thread pour déclencher tout.                
+        while datetime.now().second   < 59:
+            system_time.sleep(0.5)
         [t.start() for t in threads]
         #Pour attendre la fin de tous les threads.
         [t.join() for t in threads]

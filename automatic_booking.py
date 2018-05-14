@@ -9,22 +9,24 @@ Created on Mon Jun 20 21:57:01 2016
 # Data base and initial data import
 from datetime import timedelta, date, datetime, time
 
+#Import de time
+import time as system_time
+
 #import asyncio
 import asyncio
 import aiohttp
 
-#Import de time
-import time as system_time
-
-# Used to launch a request for multiple courses 
-#import threading
-REQUEST_ITER = 20 #Nombre de requêtes successives de chaque thread
-THREAD_NUMBER = 10 #Nombre de thread pour les requêtes
 # Internet access
 import requests
 
 #Import of the private data for Heitzfit access and mailserver.
 import private_data
+
+# Used to launch a request for multiple courses
+#import threading
+REQUEST_ITER = 20 #Nombre de requêtes successives de chaque thread
+THREAD_NUMBER = 10 #Nombre de thread pour les requêtes
+
 
 # Intenet site access variables for Heitzfit
 HEADERS = {'User-Agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:58.0)\
@@ -37,8 +39,10 @@ DAY_LIST = private_data.DAY_LIST #List
 COURSE_LIST = private_data.COURSE_LIST
 BOOKING_DELAY = 5*24  # en heure normalement 48
 INTERVAL_DELAY = 24 # en heure normalement 6 minutes soit 0.1
-DELAY_SUP = (BOOKING_DELAY + INTERVAL_DELAY) * 3600  #Mettre 48h et 10 minutes soit 48.1*3600
-DELAY_INF = (BOOKING_DELAY - INTERVAL_DELAY) * 3600  #Après 10m, on considère que le cours est complet
+#Mettre 48h et 10 minutes soit 48.1*3600
+DELAY_SUP = (BOOKING_DELAY + INTERVAL_DELAY) * 3600
+#Après 10m, on considère que le cours est complet
+DELAY_INF = (BOOKING_DELAY - INTERVAL_DELAY) * 3600
 
 #Emails for booking notification
 USER_EMAIL = private_data.USER_EMAIL
@@ -88,39 +92,49 @@ def authenticate():
     return request_answer["idSession"]
 
 
-
-
-async def course_booking(iteration,id_session, id_course, course, 
-                            course_datetime):
+async def course_booking(iteration, id_session, id_course, course,
+                         course_datetime):
     """
     Demande de réservation en cas de succès renvoie True et False en cas
     de problème avec le code d'erreur.
     """
-    log_print(f"L'iteration {iteration} a été lancée")
+    #log_print(f"L'iteration {iteration} a été lancée")
     payload = {"idErreur":0,
                "idRequete":id_course,
                "idSession": id_session,
                "place":1, #Nombre de places à réserver
                "status":0,
                "type":301}
-    
-    async with aiohttp.ClientSession() as session:
-         async with session.post(URL_JSON,
-                    data=payload,headers=HEADERS) as resp:
-             request_answer = await resp.json()
-             if request_answer['status'] == "ko":
-                 log_print(f"Le résultat de la requête {iteration}\
-                 pour la séance de {course['activity']}\
-                 référencée {id_course} est {request_answer['idErreur']}")
-                 return (False, request_answer['idErreur'])
-             else:
-                 synthese = f"Cours de {course['activity']} réservé le\
-                            {course_datetime.date()} à\
-                            {course_datetime.time()}"
-                 log_print(synthese)
-                 send_email(SUPPORT_EMAIL, synthese, "Well done")
-                 send_email(USER_EMAIL, synthese, "My husband is fantastic !")
 
+    async with aiohttp.ClientSession() as session:
+        async with session.post(URL_JSON, data=payload, headers=HEADERS) as resp:
+            request_answer = await resp.json()
+            if request_answer['status'] == "ko":
+                log_print(f"Le résultat de la requête {iteration} " +
+                          f"pour la séance de {course['activity']} " +
+                          f"référencée {id_course} est négatif cf. code "+
+                          f"{request_answer['idErreur']}")
+                return (False, request_answer['idErreur'])
+            else:
+                synthese = f"Cours de {course['activity']} réservé le\
+                           {course_datetime.date()} à\
+                           {course_datetime.time()}"
+                log_print(synthese)
+                send_email(SUPPORT_EMAIL, synthese, "Well done")
+                send_email(USER_EMAIL, synthese, "My husband is fantastic !")
+
+def launch_bookings(i, id_session, id_course_to_book, course_to_book,
+                    booking_datetime):
+    """
+    Interface pour lancer la série de requêtes en parallèle
+    """
+    log_print("Lancement de course_booking numéro {i}")
+    loop = asyncio.get_event_loop()
+    jobs = (course_booking(i, id_session, id_course_to_book, course_to_book,
+                           booking_datetime) for i in range(REQUEST_ITER))
+
+    loop.run_until_complete(asyncio.gather(* jobs))
+    log_print("Fin de course_booking")
 
 
 def reservation_cours(course_list):
@@ -131,31 +145,30 @@ def reservation_cours(course_list):
     A faire: Revoir le process des jours cf. utilisation de crontab.
     """
     id_session = authenticate()
-    
+
     #Selection des cours à réserver en fonction du temps du démarrage.
-    
+
     course_to_book = None
     id_course_to_book = None
     booking_datetime = None #La date est unique par lancem,net cf. délai des cours.
-    now = datetime.now()    
-    
-    for course in course_list: 
-                
+    now = datetime.now()
+
+    for course in course_list:
         #Au final il n'y aura qu'un cours retenu (cf. délai et pas de
         #superposition de cours possible (A tester en théorie à la saisie
-        #des cours). 
+        #des cours).
         course_date = get_next_weekday(course['day'])
         course_time = time(hour=course['start']['hour'],
-                           minute=course['start']['minute'] )
+                           minute=course['start']['minute'])
         course_datetime = datetime.combine(course_date, course_time)
         time_to_course = (course_datetime - now).total_seconds()
-        
+
         if (time_to_course < DELAY_SUP) and (time_to_course > DELAY_INF):
-            course_to_book = course   
+            course_to_book = course
             booking_datetime = course_datetime
-    if course_to_book == None: 
+    if course_to_book is None:
         log_print("Pas de cours à réserver dans l'intervalle")
-    
+
     else:
         log_print("Un cours est à réserver dans l'intervalle")
         #Récupération de l'ID du cours concerné
@@ -165,61 +178,34 @@ def reservation_cours(course_list):
                    "status":0,
                    "taches":ACTIVITY_LIST[course_to_book['activity']],
                    "type":12}
-                         
+
         req = requests.post(URL_JSON, HEADERS, params=payload)
         request_answer = req.json()
         #On prend le cours du matin (supposé être le premier cours).
         for possible_course in request_answer["reservation"]:
             content = dict(possible_course)
             time_components = content['debutHeure'].split(":")
-            #On récupère la séance correspondant à l'heure préuve 
-            if (int(time_components[0]) == booking_datetime.time().hour ) and \
-               (int(time_components[1]) == booking_datetime.time().minute): 
-                   id_course_to_book = dict(request_answer["reservation"][0])['id']
-   
+            #On récupère la séance correspondant à l'heure préuve
+            if (int(time_components[0]) == booking_datetime.time().hour) and \
+               (int(time_components[1]) == booking_datetime.time().minute):
+                id_course_to_book = dict(request_answer["reservation"][0])['id']
+
         # Lancement de la procédure asynchrone après le timing pour viser l'heure
         # exacte de déblocage de la réservation.
 
-        #Lancement de la procé
-        log_print("Lancement de course_booking")
-        loop = asyncio.get_event_loop()
-        jobs = (course_booking(i+1,id_session,id_course_to_book,course_to_book,
-                       booking_datetime) for i in range(REQUEST_ITER))
-        #Attente pour arriver à 59. 
-        while datetime.now().second < 59:
-            system_time.sleep(0.5)    
-            
-        loop.run_until_complete(asyncio.gather(* jobs))
-        
-        system_time.sleep(0.5)
-        loop.run_until_complete(asyncio.gather(* jobs))
-        
-        log_print("Fin de course_booking")
-        
-#        lancement des threads cf. parallélisation des requêtes
-#        threads = []
-#        for id_thread in range(THREAD_NUMBER):
-#            t = threading.Thread(target=course_booking, 
-#                                 args=(id_thread +1,
-#                                       id_session, 
-#                                       id_course_to_book,
-#                                       course_to_book,
-#                                       booking_datetime,                              
-#                                       REQUEST_ITER))
-#            threads.append(t)
-#        #Boucle pour attendre la seconde précédent la minute suivante
-#        #A revoir peut être avec le système de thread pour déclencher tout.                
-#        while datetime.now().second   < 59:
-#            system_time.sleep(0.5)
-#        #Lancement des threads
-#        log_print("Les threads vont être lancés")
-#        [t.start() for t in threads]
-#        log_print("Les threads ont êté lancés")
-#        #Pour attendre la fin de tous les threads.
-#        [t.join() for t in threads]
-                    
-#reservation_cours(ACTIVITY_LIST)
-
+        while True:
+            now = datetime.now().time()
+            log_print(now)
+            if ((now.second == 59) and (now.microsecond > 950000)) or\
+                ((now.second) == 0 and (now.microsecond < 50000)):
+                break
+            else:
+                system_time.sleep(0.1)
+        #Launch series of asynchronous series.
+        for i in range(4):
+            launch_bookings(i+1, id_session, id_course_to_book,
+                            course_to_book, booking_datetime)
+            system_time.sleep(0.2)
 try:
     log_print("Démarrage du processus de réservation")
     reservation_cours(COURSE_LIST)

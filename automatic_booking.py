@@ -128,7 +128,7 @@ def launch_bookings(i, id_session, id_course_to_book, course_to_book,
     """
     Interface pour lancer la série de requêtes en parallèle
     """
-    log_print("Lancement de course_booking numéro {i}")
+    log_print(f"Lancement de course_booking numéro {i}")
     loop = asyncio.get_event_loop()
     jobs = (course_booking(i, id_session, id_course_to_book, course_to_book,
                            booking_datetime) for i in range(REQUEST_ITER))

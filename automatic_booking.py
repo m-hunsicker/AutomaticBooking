@@ -14,13 +14,17 @@ import time as system_time
 
 # Used to launch a request for multiple courses 
 import threading
-THREAD_ITER = 20 #Nombre de requêtes successives de chaque thread
-THREAD_NUMBER = 10 #Nombre de thread pour les requêtes
+from queue import Queue
+
 # Internet access
 import requests
 
 #Import of the private data for Heitzfit access and mailserver.
 import private_data
+
+#Fixation des caractéristiques du thread
+THREAD_ITER = 20 #Nombre de requêtes successives de chaque thread
+THREAD_NUMBER = 5 #Nombre de thread pour les requêtes
 
 # Intenet site access variables for Heitzfit
 HEADERS = {'User-Agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:58.0)\
@@ -31,8 +35,9 @@ URL_JSON = private_data.URL_JSON #string
 ACTIVITY_LIST = private_data.ACTIVITY_LIST #dictionnary
 DAY_LIST = private_data.DAY_LIST #List
 COURSE_LIST = private_data.COURSE_LIST
+CODES_ARRET_NEGATIF = {202:"cours déjà réservé", 201:"cours complet"}
 BOOKING_DELAY = 48  # en heure normalement 48
-INTERVAL_DELAY = 0.1 # en heure normalement 6 minutes
+INTERVAL_DELAY = 0.1 # en heure normalement 6 minutes soit 0.1
 DELAY_SUP = (BOOKING_DELAY + INTERVAL_DELAY) * 3600  #Mettre 48h et 10 minutes soit 48.1*3600
 DELAY_INF = (BOOKING_DELAY - INTERVAL_DELAY) * 3600  #Après 10m, on considère que le cours est complet
 
@@ -79,10 +84,14 @@ def authenticate():
                "status":0,
                "idErreur":0,
                "type":1}
-    req = requests.post(URL_JSON, HEADERS, params=payload)
-    request_answer = req.json()
-    return request_answer["idSession"]
-
+    try:
+        req = requests.post(URL_JSON, HEADERS, params=payload)
+        request_answer = req.json()
+        return (True, request_answer["idSession"])
+    except Exception as exception:
+        log_print("Fonction authenticate() - Erreur de la connexion request :"+
+                  str(exception))
+        return (False, "")
 
 def course_booking(id_session, id_cours):
     """
@@ -103,23 +112,37 @@ def course_booking(id_session, id_cours):
 
 
 def booking_thread_function(id_thread,id_session, id_course, course, 
-                            course_datetime,iterations):
-    log_print(f"Le thread {id_thread} a été lancé)")
+                            course_datetime,iterations,stop_queue):
+    log_print(f"Le thread {id_thread} a été lancé")
     for i in range(iterations):
+        #test if another threads already reached a stop condition
+        if not stop_queue.empty():
+                break
         result = course_booking(id_session, id_course)
-        log_print(f"Le résultat de la requête {i+1} du thread {id_thread} pour\
-                  la séance de {course['activity']} référencée {id_course} est {result}")
+        #test if another threads already reached a stop condition 
+        if not stop_queue.empty():
+            break
+        log_print(f"Le résultat de la requête {i+1} du thread {id_thread} " +
+                  f"pour la séance de {course['activity']} référencée " +
+                  f"{id_course} est {result}")
         if result[0]:
-            synthese = f"Cours de {course['activity']} réservé le\
-                        {course_datetime.date()} à\
-                        {course_datetime.time()}"
+            #Inform the oher threads to stop (here booking achieved)
+            #The va
+            stop_queue.put(1)
+            synthese = f"Cours de {course['activity']} réservé le " +\
+                       f"{course_datetime.date()} à {course_datetime.time()}"
             log_print(synthese)
             send_email(SUPPORT_EMAIL, synthese, "Well done")
             send_email(USER_EMAIL, synthese, "My husband is fantastic !")
-            
             return
-    log_print(f"Le thread {id_thread} pour la séance de {course['activity']}\
-              référencée  {id_course} est terminé)")
+        elif result[1] in CODES_ARRET_NEGATIF: 
+            #Inform the oher threads to stop course complete or already booked)
+            stop_queue.put(1)
+            log_print(f"L'iteration {i} du thread {id_thread} est stoppée " +
+                      f"car {CODES_ARRET_NEGATIF[result[1]]}")
+            break
+    log_print(f"Le thread {id_thread} pour la séance de {course['activity']} "+
+              f"référencée  {id_course} est terminé)")
 
 def reservation_cours(course_list):
     """
@@ -128,10 +151,16 @@ def reservation_cours(course_list):
     A priori l'ouverture de la réservation survient 48 heures avant le cours
     A faire: Revoir le process des jours cf. utilisation de crontab.
     """
-    id_session = authenticate()
+    
+    authentication = authenticate()
+    #Vérification du résultat de l'authentification
+    if authentication[0] != True:
+        log_print("reservation_cours : l'authentification n'a pas fonctionné")
+        return
+
+    id_session = authentication[1]
     
     #Selection des cours à réserver en fonction du temps du démarrage.
-    
     course_to_book = None
     id_course_to_book = None
     booking_datetime = None #La date est unique par lancem,net cf. délai des cours.
@@ -163,27 +192,41 @@ def reservation_cours(course_list):
                    "taches":ACTIVITY_LIST[course_to_book['activity']],
                    "type":12}
                          
-        req = requests.post(URL_JSON, HEADERS, params=payload)
-        request_answer = req.json()
-        #On prend le cours du matin (supposé être le premier cours).
-        for possible_course in request_answer["reservation"]:
-            content = dict(possible_course)
-            time_components = content['debutHeure'].split(":")
-            #On récupère la séance correspondant à l'heure préuve 
-            if (int(time_components[0]) == booking_datetime.time().hour ) and \
-               (int(time_components[1]) == booking_datetime.time().minute): 
-                   id_course_to_book = dict(request_answer["reservation"][0])['id']
+        try:
+            req = requests.post(URL_JSON, HEADERS, params=payload)
+            request_answer = req.json()
+
+            #On prend le cours du matin (supposé être le premier cours).
+            for possible_course in request_answer["reservation"]:
+                content = dict(possible_course)
+                time_components = content['debutHeure'].split(":")
+                #On récupère la séance correspondant à l'heure préuve
+                if (int(time_components[0]) == booking_datetime.time().hour) and \
+                    (int(time_components[1]) == booking_datetime.time().minute):
+                    id_course_to_book = dict(request_answer["reservation"][0])['id']
+        except Exception as exception:
+            log_print("Fonction reservation_cours() -"+
+                      "Erreur de la connexion request :"+
+                      str(exception))
+            return
+
     
         #lancement des threads cf. parallélisation des requêtes
         threads = []
+        
+        #Queue pour communiquer entre les threads
+        # Object that signals shutdown
+        stop_queue = Queue()
+       
         for id_thread in range(THREAD_NUMBER):
             t = threading.Thread(target=booking_thread_function, 
-                                 args=(id_thread,
+                                 args=(id_thread + 1,
                                        id_session, 
                                        id_course_to_book,
                                        course_to_book,
                                        booking_datetime,                              
-                                       THREAD_ITER))
+                                       THREAD_ITER,
+                                       stop_queue))
             threads.append(t)
         #Boucle pour attendre la seconde précédent la minute suivante
         #A revoir peut être avec le système de thread pour déclencher tout.                
@@ -193,24 +236,6 @@ def reservation_cours(course_list):
         #Pour attendre la fin de tous les threads.
         [t.join() for t in threads]
                     
-#                    result = course_booking(id_session, cours_disponible['id'])
-#                    #log_print(f"Résa pour {key} le {jours} donne {result}")
-#                    if result[0]:
-#                        synthese = f"Cours de {key}\
-#                                  réservé le {cours_disponible['date']} à\
-#                                  {cours_disponible['debutHeure']} "
-#                        log_print(synthese)
-#                        send_email(SUPPORT_EMAIL, synthese, "Well done")
-#                        send_email(USER_EMAIL, synthese, "My husband is fantastic !")
-#                        return
-#        
-#                log_print(f"Cours non réservé cf. erreur {result[1]}")
-            
-            #send_email(SUPPORT_EMAIL, synthese, "Well done")
-
-
-#reservation_cours(ACTIVITY_LIST)
-
 try:
     log_print("Démarrage du processus de réservation")
     reservation_cours(COURSE_LIST)

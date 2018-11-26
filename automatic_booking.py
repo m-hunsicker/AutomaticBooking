@@ -37,7 +37,7 @@ DAY_LIST = private_data.DAY_LIST #List
 COURSE_LIST = private_data.COURSE_LIST
 CODES_ARRET_NEGATIF = {202:"cours déjà réservé", 201:"cours complet"}
 BOOKING_DELAY = 48  # en heure normalement 48
-INTERVAL_DELAY = 0.1 # en heure normalement 6 minutes soit 0.1
+INTERVAL_DELAY = 0.1  # en heure normalement 6 minutes soit 0.1
 DELAY_SUP = (BOOKING_DELAY + INTERVAL_DELAY) * 3600  #Mettre 48h et 10 minutes soit 48.1*3600
 DELAY_INF = (BOOKING_DELAY - INTERVAL_DELAY) * 3600  #Après 10m, on considère que le cours est complet
 
@@ -55,7 +55,7 @@ def send_email(receiver, subject, text):
     request_url = 'https://api.mailgun.net/v3/{0}/messages'.format(sandbox)
 
     request = requests.post(request_url, auth=('api', key), data={
-        'from': 'Gymclass_bot@mailgun.net',
+        'from': 'Gym_bot@mailgun.org',
         'to': receiver,
         'subject': subject,
         'text': text})
